@@ -1,0 +1,33 @@
+demo_by_zip <-  fread(file.choose(), sep=",", header=T) %>%
+  filter(`Geography Type` != "Citywide", Year == 2019) %>%
+  rename(zip = Geography, population = `Population - Total`) %>%
+  mutate(zip = as.character(zip)) %>%
+  dplyr::select(-`Geography Type`, -`Record ID`)
+
+
+covid_by_zip <- fread(file.choose(), sep=",", header=T) %>%
+  mutate(
+    zip = as.character(`ZIP Code`),
+    week_st = mdy(`Week Start`),
+    week_end = mdy(`Week End`)
+  ) %>%
+  mutate(int = interval(week_st, week_end)) %>%
+  #get weeks since beginning of pandemic (1 = first week of pandemic in US/starts indexing at 1)
+  mutate(week = (min(week_st) %--% week_st) %/% weeks(1) + 1) %>%
+  dplyr:: select(-`Week Number`,-`ZIP Code`,-`Row ID`)
+
+
+covid_by_zip <- demo_by_zip %>%
+  dplyr::select(zip, population) %>%
+  rename(population2019 = population) %>%
+  right_join(covid_by_zip) %>%
+  mutate(`Case Rate - Weekly` = `Cases - Weekly`*100000/population2019,
+         `Case Rate - Cumulative` = `Cases - Cumulative`*100000/population2019,
+         `Test Rate - Weekly` = `Tests - Weekly`*100000/population2019,
+         `Test Rate - Cumulative` = `Tests - Cumulative`*100000/population2019,
+         `Percent Tested Positive - Weekly` = `Tests - Weekly`*`Population`/population2019,
+         `Percent Tested Positive - Cumulative` = `Tests - Cumulative`*`Population`/population2019,
+         `Death Rate - Weekly` = `Deaths - Weekly`*100000/population2019,
+         `Death Rate - Cumulative` = `Deaths - Cumulative`*100000/population2019) %>%
+  dplyr::select(-`Population`) %>%
+  rename(population = population2019)

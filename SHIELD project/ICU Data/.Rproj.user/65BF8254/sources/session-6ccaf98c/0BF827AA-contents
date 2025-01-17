@@ -1,0 +1,431 @@
+library(dplyr)
+library(lubridate)
+library(sf)
+
+ICU = read.csv(file.choose(), sep=",", header=T)
+Diagnoses = read.csv(file.choose(), sep=",", header=T)
+
+combined_dataset = merge(ICU, Diagnoses[, c('hsp_account_id', 'ref_bill_code', 'DX_NAME')], by = 'hsp_account_id', all.x = TRUE)
+
+# Convert to Date object first
+combined_dataset$first_icu_dt = as.Date(combined_dataset$first_icu_dt, format="%m/%d/%Y, %I:%M:%S %p")
+
+# Then, if needed, reformat to a different date format (not required if you just want a Date object)
+
+
+#combined_dataset$first_icu_dt = as.Date(paste0(combined_dataset$first_icu_dt, "-01"), format = "%Y-%m-%d")
+
+#combined_dataset$first_icu_dt = format(combined_dataset$first_icu_dt, "%b-%y")
+
+combined_dataset = combined_dataset %>%
+  rename(Date = first_icu_dt)
+
+combined_dataset$Date = format(combined_dataset$Date, "%Y-%m")
+
+# Now df$DateColumn should have dates in the "YYYY-MM" format
+#print(head(df$DateColumn))
+
+# covid_levels = unique(combined_dataset$DX_NAME[grep("COVID-19", combined_dataset$DX_NAME, ignore.case = TRUE)])
+# covid_levels
+
+# COVID related ICD-10 codes
+covid_codes = c("Z20.822","M35.81", "J12.82", "U07.1", "B97.29", "J20.8", "J22", "J98.8", "J80", "U09.9") 
+
+combined_dataset = combined_dataset %>%
+  mutate(Date = ym(Date)) %>%  # Convert to Date format
+  filter(st == "IL", 
+         year(Date) %in% c(2021,2022), 
+         ref_bill_code %in% covid_codes)
+
+combined_dataset$Date <- format(combined_dataset$Date, "%Y-%m")
+
+combined_dataset$Date <- format(combined_dataset$Date, "%b-%y")
+
+# Assuming your dataframe is named df
+combined_dataset = combined_dataset %>% 
+  distinct(hsp_account_id, .keep_all = TRUE)
+
+combined_dataset = combined_dataset %>%
+  mutate(zipcode = substr(zipcode, 1, 5))
+
+# Group by hsp_account_id, and count unique zip codes for each
+unique_zip_counts = combined_dataset %>%
+  group_by(hsp_account_id) %>%
+  summarise(unique_zip_count = n_distinct(zipcode))
+
+# To identify hsp_account_ids associated with more than one zip code
+non_unique_zip_hsp = unique_zip_counts %>%
+  filter(unique_zip_count > 1)
+
+
+all_unique = all(unique_zip_counts$unique_zip_count == 1)
+
+if (all_unique) {
+  print("All hsp_account_ids belong to a unique zip code.")
+} else {
+  print("Some hsp_account_ids are associated with more than one zip code.")
+}
+
+write.csv(combined_dataset, file = "C:/Users/skasaiesharifi/Documents/ICU_UPDATED.csv", row.names = FALSE)
+
+#*****************************************************Zipcodes and Number of ICU Hospitalizations********************************************************
+
+ICU_UPDATED_2 = read.csv(file.choose(), sep=",", header=T)
+
+X = unique(ICU_UPDATED_2$zipcode)
+X = as.data.frame(X)
+
+write.csv(X, file = "C:/Users/skasaiesharifi/Documents/zipcodes for ICU.csv", row.names = FALSE)
+
+count_per_zip_ICU = ICU_UPDATED_2%>%
+  group_by(zipcode) %>%
+  summarise(total.ICU.admission.per.zipcode = sum(total.ICU.admission.per.zipcode))
+
+count_per_zip_ICU = count_per_zip_ICU[order(count_per_zip_ICU$total.ICU.admission.per.zipcode, decreasing = TRUE), ]
+
+count_per_zip_ICU = count_per_zip_ICU %>% filter(total.ICU.admission.per.zipcode >= 10)
+
+write.csv(filtered_ICU_UPDATED_2, file = "C:/Users/skasaiesharifi/Documents/filtered_ICU_UPDATED_2.csv", row.names = FALSE)
+
+
+count_per_zip_SHIELDS = ICU_UPDATED_2%>%
+  group_by(zipcode) %>%
+  summarise(total.SHIELDS.per.zipcode = max(Number_of_SHIELD_centers))
+
+count_per_zip_SHIELDS = count_per_zip_SHIELDS[order(count_per_zip_SHIELDS$total.SHIELDS.per.zipcode, decreasing = TRUE), ]
+
+
+filtered_ICU_UPDATED_2 <- ICU_UPDATED_2 %>%
+  filter(zipcode %in% count_per_zip_ICU$zipcode)
+
+#****************************************************Descriptive Analysis*****************************************************************
+
+str(combined_dataset)
+dim(combined_dataset)
+
+combined_dataset$ethnic = as.factor(combined_dataset$ethnic)
+levels(combined_dataset$ethnic)
+
+combined_dataset %>%
+  count(ethnic)
+
+ggplot(combined_dataset, aes(x=ethnic, fill=ethnic)) + 
+  geom_bar() + 
+  labs(title="Ethnic Distribution", x="Ethnic Levels", y="Count") +
+  scale_fill_brewer(palette="Spectral") + # Use a color palette for the fill
+  theme_minimal() + # Optional: Applies a minimalistic theme
+  theme(axis.text.x=element_blank()) # Remove x-axis text/labels
+
+#*********************************************************************************
+
+combined_dataset$gender = as.factor(combined_dataset$gender)
+levels(combined_dataset$gender)
+
+combined_dataset %>%
+  count(gender)
+
+ggplot(combined_dataset, aes(x=gender, fill=gender)) + 
+  geom_bar() + 
+  labs(title="Gender Distribution", x="Gender Levels", y="Count") +
+  scale_fill_brewer(palette="Spectral") + 
+  theme_minimal() +
+  theme(axis.text.x=element_blank()) 
+
+#*********************************************************************************
+
+combined_dataset$race = as.factor(combined_dataset$race)
+levels(combined_dataset$race)
+
+combined_dataset %>%
+  count(race)
+
+ggplot(combined_dataset, aes(x=race, fill=race)) + 
+  geom_bar() + 
+  labs(title="Race Distribution", x="Race Levels", y="Count") +
+  scale_fill_manual(values=c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
+                             "#FFFF33", "#A65628", "#F781BF", "#999999", "#8DD3C7", 
+                             "#BEBADA", "#FB8072", "#80B1D3", "#6F4E37", "#C4E17F",
+                             "#F9F8E6", "#E1EDB9", "#F7C6C7")) +
+  theme_minimal() +
+  theme(axis.text.x=element_blank())
+
+#*********************************************************************************
+
+combined_dataset$city = as.factor(combined_dataset$city)
+levels(combined_dataset$city)
+
+city_count = combined_dataset %>%
+  count(city)
+
+city_count = city_count[order(city_count$n, decreasing = TRUE), ]
+
+write.csv(city_count, file = "C:/Users/skasaiesharifi/Documents/city_count_V2.csv", row.names = FALSE)
+
+#*********************************************************************************
+
+combined_dataset$zipcode = as.factor(combined_dataset$zipcode)
+levels(combined_dataset$zipcode)
+
+zipcode_count = combined_dataset %>%
+  count(zipcode)
+
+zipcode_count = zipcode_count[order(zipcode_count$n, decreasing = TRUE), ]
+
+write.csv(zipcode_count, file = "C:/Users/skasaiesharifi/Documents/zipcode_count_V2.csv", row.names = FALSE)
+
+#*********************************************************************************
+
+summary(combined_dataset$age)
+
+boxplot(combined_dataset$age, main="Boxplot of Age", ylab="Values", xlab="Age")
+
+install.packages("psych")
+library(psych)
+
+describe(combined_dataset$age)
+
+#*********************************************************************************
+
+summary(combined_dataset$icu_los)
+
+boxplot(combined_dataset$icu_los, main="Boxplot of ICU_LOS", ylab="Values", xlab="ICU_LOS")
+
+describe(combined_dataset$icu_los)
+
+#*********************************************************************************
+
+combined_dataset$financial_class = as.factor(combined_dataset$financial_class)
+levels(combined_dataset$financial_class)
+
+financial_class_count = combined_dataset %>%
+  count(financial_class)
+
+financial_class_count = financial_class_count[order(financial_class_count$n, decreasing = TRUE), ]
+
+ggplot(combined_dataset, aes(x=financial_class, fill=financial_class)) + 
+  geom_bar() + 
+  labs(title="Financial Class Distribution", x="Financial Class Levels", y="Count") +
+  scale_fill_manual(values=c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
+                             "#FFFF33", "#A65628", "#F781BF", "#999999", "#8DD3C7", 
+                             "#BEBADA", "#FB8072", "#80B1D3")) +
+  theme_minimal() +
+  theme(axis.text.x=element_blank())
+
+#*********************************************************************************
+
+correlation_result = cor(combined_dataset$age, combined_dataset$icu_los, method = "pearson", use = "complete.obs")
+print(correlation_result)
+
+correlation_result = cor(combined_dataset$age, combined_dataset$CharlestonScore, method = "pearson", use = "complete.obs")
+print(correlation_result)
+
+#*********************************************************************************
+# Assuming your dataset is named `zipcodes_and_patients_V2`
+ 
+zip_code_boundary = zctas(cb = FALSE, state = "IL", year = 2010) %>% 
+  filter(ZCTA5CE10 %in% filtered_zipcodes$filtered_zipcodes)
+
+zip_code_boundary_wgs84 = st_transform(zip_code_boundary, crs = 4326)
+
+install.packages("sf")
+install.packages("leaflet")
+library(sf)
+library(leaflet)
+
+leaflet() %>% 
+  addProviderTiles(providers$OpenStreetMap) %>% 
+  setView(lng = -87.841695, lat = 41.879198, zoom = 10) %>%
+  addPolygons(data = zip_code_boundary_wgs84, fillColor = "blue", fillOpacity = 0.2, color = "black", weight = 2, smoothFactor = 0.5)
+
+#***********************************************************Number of Testing centers for each zipcode**********************************
+
+Test_Centers = read.csv(file.choose(), sep=",", header=T)
+
+Test_Centers = Test_Centers %>% 
+  filter(covidSHIELD.Requested == "TRUE")
+
+total_test_center_per_zip = Test_Centers %>%
+  group_by(Zip) %>%
+  summarise(Account.Name = n())
+
+total_test_center_per_zip = total_test_center_per_zip %>%
+  rename(Total_Test_Centers = Account.Name)
+
+total_test_center_per_zip = total_test_center_per_zip %>%
+  rename(zipcode = Zip)
+
+total_test_center_per_zip = total_test_center_per_zip[order(total_test_center_per_zip$Total_Test_Centers, decreasing = TRUE), ]
+
+#***********************************************************Merging Three Datasets**********************************
+
+dim(total_test_center_per_zip)
+dim(count_per_zip_ICU)
+
+# Unique zip codes in the first dataset not in the second
+unique_in_test_center = setdiff(total_test_center_per_zip$zipcode, count_per_zip_ICU$zipcode)
+
+# Unique zip codes in the second dataset not in the first
+unique_in_hsp_acc_id = setdiff(count_per_zip_ICU$zipcode, total_test_center_per_zip$zipcode)
+
+# Print unique zip codes
+print(unique_in_test_center)
+print(unique_in_hsp_acc_id)
+
+# Merging datasets
+Merged_Dataset = total_test_center_per_zip %>%
+  full_join(count_per_zip_ICU, by = "zipcode") #%>%
+  # Replacing NA values with 0
+  #mutate(ICU_Admission = replace_na(ICU_Admission, 0),
+         #Total_Test_Centers = replace_na(Total_Test_Centers, 0))
+
+dim(Merged_Dataset)
+
+Merged_Dataset = na.omit(Merged_Dataset)
+
+Merged_Dataset = Merged_Dataset %>%
+  rename(ICU_Admission = total_hsp_account_ids)
+
+Merged_Dataset = Merged_Dataset %>%
+  filter(ICU_Admission > 10)
+
+write.csv(Merged_Dataset, file = "C:/Users/skasaiesharifi/Documents/Merged Dataset.csv", row.names = FALSE)
+
+register_google(key = "AIzaSyAkwdJeM7LFVthD5em9YkYchOADPuupai0")
+
+geocoded_data = geocode(Merged_Dataset$zipcode, source = "google", output = "more")
+
+Merged_Dataset$lon = geocoded_data$lon
+Merged_Dataset$lat = geocoded_data$lat
+
+Merged_Dataset$color = ifelse(Merged_Dataset$Total_Test_Centers == 0, "red", "blue")
+
+leaflet(Merged_Dataset) %>%
+  addTiles() %>%
+  addCircles(lng = ~lon, lat = ~lat, color = ~color, opacity = 1, fillOpacity = 1, radius = 500)
+
+#**********************************Correlation between ICU Admission and Number of Test Centers**********************************
+population = read.csv(file.choose(), sep=",", header=T)
+
+population = population %>%
+  rename(zipcode = ZIP)
+
+
+Merged_Dataset = merge(Merged_Dataset, population, by = "zipcode")
+
+Merged_Dataset = Merged_Dataset %>%
+  rename(Number_of_Population = cpop)
+
+Merged_Dataset$ICU_Admission_Rate = (Merged_Dataset$ICU_Admission / Merged_Dataset$Number_of_Population) * 1000
+
+
+Correlation_Result = cor(Merged_Dataset$Total_Test_Centers, Merged_Dataset$ICU_Admission_Rate, method = "pearson", use = "complete.obs")
+print(Correlation_Result)
+
+
+ggplot(Merged_Dataset, aes(x = Total_Test_Centers, y = ICU_Admission_Rate)) +
+  geom_point(alpha = 0.5) +  # Adjust point transparency with alpha
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +  # Add a linear regression line
+  labs(title = "Correlation between ICU Admissions Rate and Total Test Centers",
+       x = "Total Number of Test Centers",
+       y = "Rate of ICU Admission") +
+  theme_minimal()  # Use a minimal theme for a cleaner look
+
+#**********************************Number of Death per Zipcode**********************************
+
+combined_dataset = combined_dataset %>%
+  mutate(Death_Y_N = ifelse(is.na(death_date), 0, 1))
+
+write.csv(combined_dataset, file = "C:/Users/skasaiesharifi/Documents/combined dataset.csv", row.names = FALSE)
+
+filtered_combined_dataset = combined_dataset %>%
+  filter(zipcode %in% filtered_zipcodes)
+
+
+total_death_per_zipcode = filtered_combined_dataset %>%
+  group_by(zipcode) %>%
+  summarise(Total_Deaths = sum(Death_Y_N, na.rm = TRUE))
+
+
+Merged_Dataset = total_death_per_zipcode %>%
+  full_join(Merged_Dataset, by = "zipcode")
+
+Merged_Dataset$Death_Rate = (Merged_Dataset$Total_Deaths / Merged_Dataset$Number_of_Population) * 1000
+
+
+#************************Association between Number of Test Centers and Number of Death***************
+
+Correlation_Result = cor(Merged_Dataset$Total_Test_Centers, Merged_Dataset$Death_Rate, method = "pearson", use = "complete.obs")
+print(Correlation_Result)
+
+ggplot(Merged_Dataset, aes(x = Total_Test_Centers, y = Death_Rate)) +
+  geom_point(alpha = 0.5) +  # Adjust point transparency with alpha
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +  # Add a linear regression line
+  labs(title = "Correlation between Death Rate and Total Test Centers",
+       x = "Total Number of Test Centers",
+       y = "Rate of Death") +
+  theme_minimal()
+
+#************************************************Question 1*******************************************
+
+install.packages("glm2")
+install.packages("broom")
+install.packages("knitr")
+library(broom)
+library(knitr)
+library(glm2)
+
+icu_model = glm(ICU_Admission_Rate ~ Total_Test_Centers, family = poisson, data = Merged_Dataset)
+
+summary(icu_model)
+
+model_summary = tidy(icu_model)
+
+death_model = glm(Death_Rate ~ Total_Test_Centers, family = poisson, data = Merged_Dataset)
+
+summary(death_model)
+
+model_summary = tidy(death_model)
+
+#************************************************Question 2*******************************************
+
+ADI = read.csv(file.choose(), sep=",", header=T)
+Merged_Dataset = read.csv(file.choose(), sep=",", header=T)
+
+Correlation_Result = cor(Merged_Dataset$ADI_STATERNK, Merged_Dataset$ICU_Admission_Rate, method = "pearson", use = "complete.obs")
+print(Correlation_Result)
+
+ggplot(Merged_Dataset, aes(x = ADI_STATERNK, y = ICU_Admission_Rate)) +
+  geom_point(alpha = 0.5) +  # Adjust point transparency with alpha
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +  # Add a linear regression line
+  labs(title = "Correlation between ADI and ICU Admission Rate",
+       x = "ADI",
+       y = "Rate of ICU Admission") +
+  theme_minimal()
+
+Correlation_Result = cor(Merged_Dataset$ADI_STATERNK, Merged_Dataset$Death_Rate, method = "pearson", use = "complete.obs")
+print(Correlation_Result)
+
+ggplot(Merged_Dataset, aes(x = ADI_STATERNK, y = Death_Rate)) +
+  geom_point(alpha = 0.5) +  # Adjust point transparency with alpha
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +  # Add a linear regression line
+  labs(title = "Correlation between ADI and Death Rate",
+       x = "ADI",
+       y = "Rate of Death") +
+  theme_minimal()
+
+
+icu_model_1 = glm(ICU_Admission_Rate ~ ADI_STATERNK, family = poisson, data = Merged_Dataset)
+
+summary(icu_model_1)
+
+model_summary = tidy(icu_model_1)
+
+death_model_1 = glm(Death_Rate ~ ADI_STATERNK, family = poisson, data = Merged_Dataset)
+
+summary(death_model_1)
+
+model_summary = tidy(death_model_1)
+
+#************************************************Question 3*******************************************
+
+

@@ -1,0 +1,867 @@
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(lme4)
+library(sjPlot)
+library(car)
+library(scales)
+library(broom.mixed)
+library(sjmisc)
+library(sjstats)
+
+
+
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+
+
+#Change directory to IRB folder
+setwd('R:/tmarkossian/212900/msaban')
+getwd()
+
+#load('GeospatialAnalysis.RData')
+
+#Read dataset into df
+data_file <- 'irb_212900_20240223_geospatial_impute_nocovid.csv'
+#data_file <- 'irb_212900_20240312_htn_geospatial.csv'
+data <- read.csv(data_file)
+
+#Change column names
+colnames(data)[c(6,29,41,42)] <- c('p<9thGrade','p<1.5PovThresh','Insurance','Married')
+#colnames(data)[c(11,14,17,32)] <- c('mfaminc ($1000)','mrent ($1000)','mhv ($1000)','mmMortgage ($1000)')
+
+#Divide $ columns by 1000
+#data$`mfaminc ($1000)` <- (data$`mfaminc ($1000)`)/1000
+#data$`mhv ($1000)` <- (data$`mhv ($1000)`)/1000
+#data$`mrent ($1000)` <- (data$`mrent ($1000)`)/1000
+#data$`mmMortgage ($1000)` <- (data$`mmMortgage ($1000)`)/1000
+subdata <- data[c(6,7,8,11,14,17,18,19,21,23,25,26,27,28,29,32,33,34)]
+
+
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+
+
+#Examine data summary
+summary(subdata)
+
+#Data distribution
+#subdata_long <- subdata %>%
+#  pivot_longer(colnames(subdata)) %>%
+#  as.data.frame()
+#head(subdata_long)
+#ggp1 <- ggplot(subdata_long, aes(x=value)) +
+#  geom_histogram() +
+#  scale_y_continuous(labels=label_number(scale = 0.001)) +
+#  facet_wrap(~ name, scales='free') +
+#  ylab('Visits (Thousands)') +
+#  xlab('Values')
+#ggp1
+#library(Hmisc)
+#hist.data.frame(subdata)
+
+
+#Count number of visits for each patient
+#counts <- data %>% 
+#  count(mrn)
+
+
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+
+
+  # /* Correlation Plot /*
+
+library(ggcorrplot)
+cordata <- data.frame(data) 
+colnames(cordata)[c(6,9,11,12,14,15,17,20,21,22,23,24,25,29,30,32)] <- c('p<9thGrade','mfamincOG','mfaminc','mrentOG','mrent','mhvOG','mhv','pOvercrowdingOG','pOvercrowding','pFamPovOG','pFamPov','pSingleParentHHOG','pSingleParentHH','p<1.5PovThresh','mmMortgageOG','mmMortgage')
+all_predictor_cols <- c(6,7,8,11,14,17,18,19,21,23,25,26,27,28,29,32,33,34,46)
+predictor_cols <- c(7,8,14,18,19,21,25,26,27,28,29,33,34,46) #Removes p<9thGrade, mfaminc,mhv, pfampov, mmMortgage
+
+datacor <- cordata[,all_predictor_cols]
+corr <- cor(datacor,use='pairwise.complete.obs')
+is.na(corr) <- abs(corr) < 0.7 #Remove correlation values < +/- 0.7
+
+ggcorrplot(corr,type='lower',lab=TRUE)
+#library(qgraph)
+#qgraph(cor(data[, predictor_cols]),minimum=0.25,vsize=4)
+
+
+
+  #/* VIF /*
+
+
+par(mar=c(6,4.1,4.1,2.1))
+
+vif_model <- lm(therapeutic_inertia ~ ., data = cordata[all_predictor_cols])
+vif(vif_model)
+vif_values <- vif(vif_model)
+x <- barplot(vif_values,main='VIF Values',col='steelblue',ylab='VIF',xaxt='n',ylim=c(0,6.0))
+text(cex=.75, labels=paste(colnames(cordata[c(6,7,8,11,14,17,18,19,21,23,25,26,27,28,29,32,33,34)])), srt=90,x=x, y=par('usr')[3]-.1,xpd=TRUE,adj=1)
+abline(h=2.5,lwd=3,lty=2)
+
+adj_vif_model <- lm(therapeutic_inertia ~ ., data=cordata[predictor_cols])
+vif(adj_vif_model)
+adj_vif_values <- vif(adj_vif_model)
+x2 <- barplot(adj_vif_values, main='Adjusted VIF Values',col='steelblue',ylab='VIF',xaxt='n',ylim=c(0,3.0))
+text(cex=.75, labels=paste(colnames(cordata[c(7,8,14,18,19,21,25,26,27,28,29,33,34)])), srt=90,x=x2,y=par('usr')[3]-.37,xpd=TRUE)
+abline(h=2.5,lwd=3,lty=2)
+
+
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+
+
+  #/* Univariable modeling /*
+
+
+# Scale data
+
+data$pHomeowner <- (data$pHomeowner)/10
+data$pAtLeastHS <- (data$pAtLeastHS)/10 #Needs adjustment
+data$pEmpWC <- (data$pEmpWC)/10
+
+data$`mfaminc` <- (data$`mfaminc`)/10000
+data$`mfaminc_impute_c` <- (data$`mfaminc_impute_c`)/10000
+
+data$`mhv` <- (data$`mhv`)/10000
+data$`mhv_impute_c` <- (data$`mhv_impute_c`)/10000
+
+data$`mrent` <- (data$`mrent`)/1000
+data$`mrent_impute_c` <- (data$`mrent_impute_c`)/1000
+
+data$pNoInternet <- (data$pNoInternet)/10
+
+data$`mmMortgage` <- (data$`mmMortgage`)/1000
+data$`mmMortgage_impute_c` <- (data$`mmMortgage_impute_c`)/1000
+
+data$`p<1.5PovThresh` <- (data$`p<1.5PovThresh`)/10
+
+data$pSingleParentHH <- (data$pSingleParentHH)/10
+data$pSingleParentHH_impute_t <- (data$pSingleParentHH_impute_t)/10
+
+data$ADI_NATRANK <- (data$ADI_NATRANK)/10
+
+
+#Univariable modeling
+plt9th <- glmer(therapeutic_inertia ~ `p<9thGrade` + (1|mrn), #
+             data=data,
+             family=binomial,
+             nAGQ = 0)
+tab_model(plt9th) # p = 0.651 , OR = 1.00 (1.00 - 1.01)
+                  # W/ nAGQ  : p = 0.578 , OR = 1.00 (1.00 - 1.01)
+summary(plt9th)
+coef <- summary(plt9th)$coefficients
+
+
+#Rescaling -- divided by 10
+pHomeowner <- glmer(therapeutic_inertia ~ `pHomeowner` + (1|mrn), #
+               data=data,
+               family=binomial,
+               nAGQ = 1)
+tab_model(pHomeowner) # No rescaling : p = 0.022 , OR = 1.00 (1.00 - 1.00)
+                      # Rescaling/10 : p = 0.022 , OR = 0.98 (0.96 - 1.00)
+                      # Rescaling/10 w/ nAGQ : p = 0.020 , OR = 0.98 (0.97 - 1.00)
+                      # No rescaling w/nAGQ : p = 0.020 , OR = 1.00 (1.00 - 1.00)
+
+
+
+
+pAtLeastHS <- glmer(therapeutic_inertia ~ `pAtLeastHS` + (1|mrn),
+               data=data,
+               family=binomial,
+               nAGQ = 0)
+tab_model(pAtLeastHS) # No rescaling : p = 0.503 , OR = 1.00 (0.99 - 1.00)
+                      # Rescaling / 10: p = 0.503 , OR = 1.00 (0.99 - 1.00)
+                      # Rescaling/10 w/ nAGQ : p = 0.433 , OR = 0.99 (0.95 - 1.02)
+                      # No rescaling w/nAGQ : p=0.433 , OR = 1.00 (0.99 - 1.00)
+
+
+
+#Rescaling -- divided by 10
+pEmpWC <- glmer(therapeutic_inertia ~ `pEmpWC`+ (1|mrn), #
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(pEmpWC) # No rescaling: p = 0.086, OR = 1.00 (1.00 - 1.00)
+                  # Rescaling / 10 : p = 0.086 , OR = 0.98 (0.96 - 1.00)
+                  # Rescaling/10 w/ nAGQ : p=0.069, OR = 0.98 (0.96 - 1.00)
+                  # No rescaling w/nAGQ : p=0.069 , OR = 1.00 (1.00 - 1.00)
+tidy(pEmpWC,exponentiate=TRUE,conf.int=TRUE)
+odds_to_rr(pEmpWC)
+
+
+#Rescaling -- divided by 10000
+mfaminc <- glmer(therapeutic_inertia ~ `mfaminc_impute_c` + (1|mrn),
+                 data=data,
+                 family=binomial,
+                 nAGQ = 0)
+tab_model(mfaminc) # No rescaling w/ imputation : p=0.000956 , OR = 1.00 (1.00-1.00)
+                   # Rescaling / 10000: p = 0.000765 , OR = 0.99 (0.98 - 0.99)
+                   # Rescaling/10000 w/ nAGQ : p=0.001 , OR = 0.99 (0.98 - 0.99)  #same w/imputation
+
+
+
+#Rescaling -- divided by 100
+mrent <- glmer(therapeutic_inertia ~ `mrent_impute_c` + (1|mrn), 
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0) 
+tab_model(mrent)
+                 # p = 0.231 , OR = 0.93 (0.83 - 1.04)
+                 # rescaling/1000 w/ nAGQ : p = 0.063 , OR = 0.92 (0.84 - 1.00)
+
+                 # Rescaling/100 w/nAGQ and imputation at tract/county level: p = 0.037 , OR = 0.99 (0.98 - 1.00)
+
+
+
+#Rescaling / 10,000
+mhv <- glmer(therapeutic_inertia ~ `mhv_impute_c` + (1|mrn),
+         data=data,
+         family=binomial,
+         nAGQ = 0)
+tab_model(mhv)
+                # Rescaling / 10,000 : p = 0.000000963 , OR = 0.99 (0.99 - 1.00)
+                # Rescaling/10000 w/nAGQ and imputation at tract/county : p = 0.00000116 , OR = 0.99 (0.99 - 1.00)
+
+
+
+#Rescaling -- divided by 100
+mmMortgage <- glmer(therapeutic_inertia ~ `mmMortgage_impute_c` + (1|mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(mmMortgage) # No rescaling w/ imputation : p = <0.0001 , OR = 1.00 (1.00 - 1.00)
+                      # Rescaling / 1000 : p = 0.000000974 , OR = 0.86 (0.81 - 0.92)
+                      # Rescaling / 1000 w/ nAGQ : p = 0.00000114 , OR = 0.87 (0.83 - 0.92)
+                      # Rescaling / 100 w/nAGQ and imputation : p = <0.001 , OR = 0.99 (0.98 - 0.99)
+                      
+
+
+
+pNoInternet <- glmer(therapeutic_inertia ~ `pNoInternet` + (1|mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(pNoInternet) # p = 0.0915 , OR = 1.00 (1.00 - 1.01)
+                       # W/ nAGQ : p = 0.076 , OR = 1.00 (1.00 - 1.01)
+
+
+
+pNoVehicle <- glmer(therapeutic_inertia ~ `pNoVehicle` + (1|mrn),
+                 data=data,
+                 family=binomial,
+                 nAGQ = 0)
+tab_model(pNoVehicle) # p = 0.0714 , OR = 1.00 (1.00 - 1.01)
+                      # W/ nAGQ: p =0.071 , OR = 1.00 (1.00-1.01)
+
+
+
+pOvercrowding <- glmer(therapeutic_inertia ~ `pOvercrowding_impute_t` + (1|mrn),
+                           data=data,
+                           family=binomial,
+                           nAGQ = 0)
+tab_model(pOvercrowding) # W/ imputation : p = 0.214, OR = 0.99 (0.97 - 1.01)
+                         # p = 0.303 , OR = 0.99 (0.97 - 1.01)
+                         # W/ nAGQ and imputation: p =0.229 , OR = 0.99 (0.97 - 1.01)
+
+
+
+pfampov <- glmer(therapeutic_inertia ~ `pFamPov_impute_t` + (1|mrn),
+                 data=data,
+                 family=binomial,
+                 nAGQ = 0)
+tab_model(pfampov) # W/ imputation : p = 0.279, OR = 1.00 (1.00 - 1.01)
+                   # p = 0.284, OR = 1.00 (1.00 - 1.01)
+                   # W/ nAGQ and imputation : p =0.244 1.00 (1.00 - 1.01)
+
+
+
+#Rescaling -- divided by 10
+pPovThresh <- glmer(therapeutic_inertia ~ `p<1.5PovThresh` + (1 | mrn),
+                    data = data,
+                    family = binomial,
+                    nAGQ = 0)
+tab_model(pPovThresh) # No rescaling : p=0.016 , OR = 1.00 (1.00 - 1.01)
+                      # Rescaling / 10 : p = 0.016 , OR = 1.04 (1.01 - 1.07)
+                      # Rescaling / 10 w/ nAGQ: p =0.014, OR = 1.03 (1.01 - 1.06)
+
+
+
+#Rescaling -- divided by 10
+pSingleParentHH <- glmer(therapeutic_inertia ~ `pSingleParentHH_impute_t` + (1|mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(pSingleParentHH) # No rescaling w/ imputation: p = 0.419 , OR = 1.00 (1.00 - 1.00)
+                           # Rescaling / 10 : p = 0.426 , OR = 1.01 (0.98 - 1.05)
+                           # Rescaling / 10 w/ nAGQ: p =0.390 , OR = 1.01 (0.98 - 1.04)
+
+
+pUnemployed <- glmer(therapeutic_inertia ~ `pUnemployed` + (1|mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(pUnemployed) # p = 0.850 , OR = 1.00 (0.99 - 1.01)
+                       # W/ nAGQ: p = 0.788 , OR = 1.00 (0.99 - 1.01)
+
+
+
+#Rescaling -- divided by 10
+ADI_NATRANK <- glmer(therapeutic_inertia ~ ADI_NATRANK + (1|mrn),
+                     data=data,
+                     family=binomial,
+                     nAGQ=0)
+tab_model(ADI_NATRANK) # No rescaling : p = 0.0000425 , OR = 1.00 (1.00 - 1.01)
+                       # Rescaling / 10: 2021v4: p = 0.0000425 , OR = 1.05 (1.02 - 1.07)
+                       # Rescaling/10 w/ nAGQ : p = 0.0000364 , OR = 1.03 (1.01 - 1.06)
+
+
+ADI_Quarts <- glmer(therapeutic_inertia ~ ADIQuartiles + (1 | mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ=0)
+summary(ADI_Quarts)
+tab_model(ADI_Quarts)
+
+ADI_Decs <- glmer(therapeutic_inertia ~ ADIDeciles + (1 | mrn),
+                  data=data,
+                  family=binomial,
+                  nAGQ=0)
+tab_model(ADI_Decs)
+
+
+IncDispIndex <- glmer(therapeutic_inertia ~ IncDispIndex + (1|mrn),
+               data=data,
+               family=binomial,
+               nAGQ = 0)
+tab_model(IncDispIndex) # p = 0.994 , OR = 1.00 (0.51 - 1.96)
+                        # W/ nAGQ: p=0.992 , OR = 1.00(0.53-1.88)
+
+
+pNoPlumbing <- glmer(therapeutic_inertia ~ `pNoFullPlumbing` + (1|mrn),
+                        data=data,
+                        family=binomial,
+                        nAGQ = 0)
+tab_model(pNoPlumbing) # p = 0.658 , OR = 1.01 (0.96 - 1.07)
+                       # W/ nAGQ : p = 0.664 , OR = 1.01 (0.96 - 1.07)
+
+
+sbp <- glmer(therapeutic_inertia ~ systolic + (1|mrn),
+             data=data,
+             family=binomial,
+             nAGQ=0)
+tab_model(sbp)
+summary(sbp)
+
+
+
+
+
+data$Insurance <- factor(data$Insurance,levels=c('Medicare','Private','Other','Medicaid'))
+data$Married <- factor(data$Married)
+data$gender <- factor(data$gender)
+data$agegrp <- factor(data$agegrp)
+data$race_eth1 <- factor(data$race_eth1)
+data$ama_bp <- factor(data$ama_bp)
+data$ADIDeciles <- factor(data$ADIDeciles)
+#data$RLGrade1 <- factor(data$RLGrade1,levels=c('A','U','B','C','D'))
+
+
+ama <- glmer(therapeutic_inertia ~ ama_bp + (1|mrn),
+             data=data,
+             family=binomial,
+             nAGQ=0)
+tab_model(ama)
+summary(ama)
+
+raceeth <- glmer(therapeutic_inertia ~ `race_eth1` + (1 |mrn),
+                 data=data,
+                 family=binomial,
+                 nAGQ = 0)
+tab_model(raceeth) # Ref=1 ... 2: p=0.796 ,OR=0.99 (0.89-1.09) ... 3: p=0.038,OR=0.84(0.70-0.99) ... 4: p=0.003,OR=0.83(0.73-0.94)
+print(Anova(raceeth,type=3)) # p = 0.007
+
+
+agegroup <- glmer(therapeutic_inertia ~ agegrp + (1 | mrn),
+                  data=data,
+                  family=binomial,
+                  nAGQ = 0)
+tab_model(agegroup) # p = <2e-16 , OR = 1.40 (1.30 - 1.50)
+print(Anova(agegroup,type=3))
+
+gend <- glmer(therapeutic_inertia ~ gender + (1 | mrn),
+              data=data,
+              family=binomial,
+              nAGQ = 0)
+tab_model(gend) # p = 0.012 , OR = 0.91 (0.84 - 0.98)
+print(Anova(gend,type=3))
+
+#redline_uni <- glmer(therapeutic_inertia ~ RLGrade1 + (1 | mrn),
+#                     data=data,
+#                     family=binomial,
+#                     nAGQ = 0)
+#tab_model(redline_uni) # Ref=U , A: p = 0.253 OR=0.84(0.62-1.14) , B: p=0.060 OR=1.16(0.99-1.35), C: p=0.218 OR=1.05(0.97-1.14), D: p=0.450 OR=1.05(0.92-1.21)
+#print(Anova(redline_uni,type=3)) # 0.1869
+
+
+previous_nhtn <- glmer(therapeutic_inertia ~ prior_nonhtn_visits + (1 | mrn),
+                       data=data,
+                       family=binomial,
+                       nAGQ = 0)
+summary(previous_nhtn)
+tab_model(previous_nhtn) # p = <2e-16, OR = 1.22 (1.19 - 1.26)
+
+Insurance <- glmer(therapeutic_inertia ~ Insurance + (1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ=0)
+tab_model(Insurance) # Other=ref , Medicaid: p=0.0077 OR=1.45 (1.10-1.91) , Medicare: p=<0.0001 OR=1.47 (1.30-1.65)
+print(Anova(Insurance,type=3)) # p=<0.0001
+
+MaritalStatus <- glmer(therapeutic_inertia ~ Married + (1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ=0)
+tab_model(MaritalStatus) # p=<0.0001 , OR= 0.86 (0.80-0.93)    # Married patients are 14% less likely to experience TI than unmarried patients
+
+medications <- glmer(therapeutic_inertia ~ total_med_classes + (1 | mrn),
+                     data=data,
+                     family=binomial,
+                     nAGQ = 0)
+tab_model(medications)
+summary(medications) # OR= 1.60 (1.53-1.66), p <2e-16
+
+comorbidities <- glmer(therapeutic_inertia ~ total_comorbidities + (1 | mrn),
+                       data=data,
+                       family=binomial,
+                       nAGQ = 0)
+tab_model(comorbidities)
+summary(comorbidities) # OR = 1.16 (1.13-1.19), p <2e-16
+
+totalvisits <- glmer(therapeutic_inertia ~ total_visits + (1 | mrn),
+                      data=data,
+                      family=binomial,
+                      nAGQ = 0)
+tab_model(totalvisits)
+summary(totalvisits) # OR = 1.04 (1.03-1.05), p <2e-16
+
+visitnum <- glmer(therapeutic_inertia ~ `visit#` + (1 | mrn),
+                  data=data,
+                  family=binomial,
+                  nAGQ = 0)
+tab_model(visitnum)
+summary(visitnum) # OR = 1.04 (1.03-1.05), p <2e-16
+
+
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+
+
+  #/* Multivariable modeling /*
+
+
+data$ADIQuartiles <- factor(data$ADIQuartiles)
+
+onlyADI <- glmer(therapeutic_inertia ~ ADIQuartiles+gender+race_eth1+agegrp+Insurance+Married+systolic+ama_bp+total_med_classes+total_comorbidities+(1 | mrn),
+                 data=data,
+                 family=binomial,
+                 nAGQ=0)
+tab_model(onlyADI)
+summary(onlyADI)
+
+
+#noADI <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+pEmpWC+mrent_impute_c+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+race_eth1+agegrp+Insurance+Married+systolic+ama_bp+(1 | mrn),
+#               data=data,
+#               family=binomial,
+#               nAGQ = 0)
+#tab_model(noADI)
+
+
+#For full dataset with htn
+htn_ADI <- glmer(htn ~ ADIQuartiles+race_eth1+gender+agegrp+Insurance+Married+total_med_classes+total_comorbidities+ama_bp+(1|mrn),
+                 data=data,
+                 family=binomial,
+                 nAGQ=0)
+tab_model(htn_ADI)
+
+
+ADI <- glmer(therapeutic_inertia ~ ADIQuartiles+(1|mrn),
+                 data=data,
+                 family=binomial,
+                 nAGQ=0)
+tab_model(ADI)
+
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+
+
+    # /* Multivariable with ADI/Demographic interactions */
+
+
+library(emmeans)
+#emtrends(modelrace_pNoInternet, ~ race_eth1, var = 'pNoInternet')
+
+
+#Same as modelgeo_dem, but includes an interaction between ADI and age group
+modelage_ADI <- glmer(therapeutic_inertia ~ gender+race_eth1+ADI_NATRANK*agegrp+Insurance+Married+systolic+ama_bp+(1 | mrn),
+                     data=data,
+                     family=binomial,
+                     nAGQ = 0)
+tab_model(modelage_ADI)
+
+
+#Same as modelgeo_dem, but includes an interaction between ADI and sex
+modelsex_ADI <- glmer(therapeutic_inertia ~ ADI_NATRANK*gender+race_eth1+agegrp+Insurance+Married+systolic+ama_bp+(1 | mrn),
+                     data=data,
+                     family=binomial,
+                     nAGQ = 0)
+tab_model(modelsex_ADI)
+
+
+#Same as modelgeo_dem, but includes an interaction between ADI and race/ethnicity
+modelrace_ADI <- glmer(therapeutic_inertia ~ gender+ADI_NATRANK*race_eth1+agegrp+Insurance+Married+systolic+ama_bp+(1 | mrn),
+                     data=data,
+                     family=binomial,
+                     nAGQ = 0)
+tab_model(modelrace_ADI)
+print(Anova(modelrace_ADI,type=3))
+emtrends(modelrace_ADI, ~ race_eth1, var = 'ADI_NATRANK')
+test(emtrends(modelrace_ADI, ~ race_eth1, var = 'ADI_NATRANK'))
+
+
+
+# /* Multivariable with pAtLeastHS/Demographic interactions */
+
+modelage_pAtLeastHS <- glmer(therapeutic_inertia ~ pAtLeastHS*agegrp+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+race_eth1+Insurance+Married+(1 | mrn),
+                      data=data,
+                      family=binomial,
+                      nAGQ = 0)
+tab_model(modelage_pAtLeastHS)
+
+modelsex_pAtLeastHS <- glmer(therapeutic_inertia ~ pAtLeastHS*gender+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelsex_pAtLeastHS)
+
+modelrace_pAtLeastHS <- glmer(therapeutic_inertia ~ pAtLeastHS*race_eth1+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelrace_pAtLeastHS)
+print(Anova(modelrace_pAtLeastHS,type=3))
+
+
+
+# /* Multivariable with pHomeowner/Demographic interactions */
+
+modelage_pHomeowner <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner*agegrp+pEmpWC+mrent_impute_c+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+race_eth1+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelage_pHomeowner)
+
+modelsex_pHomeowner <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner*gender+pEmpWC+mrent_impute_c+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelsex_pHomeowner)
+
+modelrace_pHomeowner <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner*race_eth1+pEmpWC+mrent_impute_c+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+agegrp+Insurance+Married+(1 | mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(modelrace_pHomeowner)
+print(Anova(modelrace_pHomeowner,type=3))
+
+
+# /* Multivariable with pEmpWC/Demographic interactions */
+
+modelage_pEmpWC <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC*agegrp+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+race_eth1+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelage_pEmpWC)
+
+modelsex_pEmpWC <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC*gender+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelsex_pEmpWC)
+
+modelrace_pEmpWC <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC*race_eth1+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+agegrp+Insurance+Married+(1 | mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(modelrace_pEmpWC)
+print(Anova(modelrace_pEmpWC,type=3))
+
+# /* Multivariable with pNoInternet/Demographic interactions */
+
+modelage_pNoInternet <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet*agegrp+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+race_eth1+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelage_pNoInternet)
+
+modelsex_pNoInternet <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet*gender+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelsex_pNoInternet)
+
+modelrace_pNoInternet <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet*race_eth1+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+agegrp+Insurance+Married+(1 | mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(modelrace_pNoInternet)
+print(Anova(modelrace_pNoInternet,type=3))
+
+
+# /* Multivariable with pNoVehicle/Demographic interactions */
+
+modelage_pNoVehicle <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle*agegrp+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+race_eth1+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelage_pNoVehicle)
+
+modelsex_pNoVehicle <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle*gender+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelsex_pNoVehicle)
+
+modelrace_pNoVehicle <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle*race_eth1+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+agegrp+Insurance+Married+(1 | mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(modelrace_pNoVehicle)
+print(Anova(modelrace_pNoVehicle,type=3))
+
+
+
+# /* Multivariable with pOvercrowding/Demographic interactions */
+
+modelage_pOvercrowding <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t*agegrp+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+race_eth1+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelage_pOvercrowding)
+
+modelsex_pOvercrowding <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t*gender+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelsex_pOvercrowding)
+
+modelrace_pOvercrowding <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t*race_eth1+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+agegrp+Insurance+Married+(1 | mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(modelrace_pOvercrowding)
+print(Anova(modelrace_pOvercrowding,type=3))
+
+
+
+# /* Multivariable with pSingleParentHH/Demographic interactions */
+
+modelage_pSingleParentHH <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t*agegrp+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+race_eth1+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelage_pSingleParentHH)
+
+modelsex_pSingleParentHH <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t*gender+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelsex_pSingleParentHH)
+
+modelrace_pSingleParentHH <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t*race_eth1+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+agegrp+Insurance+Married+(1 | mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(modelrace_pSingleParentHH)
+print(Anova(modelrace_pSingleParentHH,type=3))
+
+
+# /* Multivariable with pUnemployed/Demographic interactions */
+
+modelage_pUnemployed <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed*agegrp+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+race_eth1+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelage_pUnemployed)
+
+modelsex_pUnemployed <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed*gender+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelsex_pUnemployed)
+
+modelrace_pUnemployed <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed*race_eth1+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+agegrp+Insurance+Married+(1 | mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(modelrace_pUnemployed)
+print(Anova(modelrace_pUnemployed,type=3))
+
+
+# /* Multivariable with p<1.5PovThresh/Demographic interactions */
+
+
+modelage_p.1.5PovThresh <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`*agegrp+IncDispIndex+pNoFullPlumbing+gender+race_eth1+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelage_p.1.5PovThresh)
+
+modelsex_p.1.5PovThresh <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`*gender+IncDispIndex+pNoFullPlumbing+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelsex_p.1.5PovThresh)
+
+modelrace_p.1.5PovThresh <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`*race_eth1+IncDispIndex+pNoFullPlumbing+gender+agegrp+Insurance+Married+(1 | mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(modelrace_p.1.5PovThresh)
+print(Anova(modelrace_p.1.5PovThresh,type=3))
+
+
+
+# /* Multivariable with IncDispIndex/Demographic interactions */
+
+
+modelage_IncDispIndex <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex*agegrp+pNoFullPlumbing+gender+race_eth1+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelage_IncDispIndex)
+
+modelsex_IncDispIndex <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex*gender+pNoFullPlumbing+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelsex_IncDispIndex)
+
+modelrace_IncDispIndex <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex*race_eth1+pNoFullPlumbing+gender+agegrp+Insurance+Married+(1 | mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(modelrace_IncDispIndex)
+print(Anova(modelrace_IncDispIndex,type=3))
+
+
+# /* Multivariable with pNoFullPlumbing/Demographic interactions */
+
+
+modelage_pNoFullPlumbing <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing*agegrp+gender+race_eth1+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelage_pNoFullPlumbing)
+
+modelsex_pNoFullPlumbing <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing*gender+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                   data=data,
+                   family=binomial,
+                   nAGQ = 0)
+tab_model(modelsex_pNoFullPlumbing)
+
+modelrace_pNoFullPlumbing <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing*race_eth1+gender+agegrp+Insurance+Married+(1 | mrn),
+                    data=data,
+                    family=binomial,
+                    nAGQ = 0)
+tab_model(modelrace_pNoFullPlumbing)
+print(Anova(modelrace_pNoFullPlumbing,type=3))
+
+
+
+# /* Multivariable with mrent/Demographic interactions */
+
+modelage_mrent <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c*agegrp+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+race_eth1+Insurance+Married+(1 | mrn),
+                                  data=data,
+                                  family=binomial,
+                                  nAGQ = 0)
+tab_model(modelage_mrent)
+
+modelsex_mrent <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c*gender+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+race_eth1+agegrp+Insurance+Married+(1 | mrn),
+                                  data=data,
+                                  family=binomial,
+                                  nAGQ = 0)
+tab_model(modelsex_mrent)
+
+modelrace_mrent <- glmer(therapeutic_inertia ~ pAtLeastHS+pHomeowner+mrent_impute_c*race_eth1+pEmpWC+pNoInternet+pNoVehicle+pOvercrowding_impute_t+pSingleParentHH_impute_t+pUnemployed+ADI_NATRANK+`p<1.5PovThresh`+IncDispIndex+pNoFullPlumbing+gender+agegrp+Insurance+Married+(1 | mrn),
+                                   data=data,
+                                   family=binomial,
+                                   nAGQ = 0)
+tab_model(modelrace_mrent)
+print(Anova(modelrace_mrent,type=3))
+
+
+
+
+
+
+ADI_RLcor <- lm(ADIQuartiles ~ race_eth1, data=data)
+print(summary(ADI_RLcor)$r.squared)
+
+#plot(x=ADI_RLcor$fitted.values, y=na.omit(data$ADI_NATRANK),
+#     xlab='Fitted ADI', ylab='Observed ADI')
+#abline(lm(na.omit(data$ADI_NATRANK) ~ ADI_RLcor$fitted.values),col='red')
+
+#df <- data.frame(RLGrade = data$RLGrade1, ADI=data$ADI_NATRANK)
+#ggplot(df) + geom_boxplot(aes(RLGrade,ADI))
+
+
+#test_file <- read.csv('Archived/test_geo_ADI2021_072723.csv')
+#test_file <- subset(test_file,select=-c(prog_note_id,txt))
+#colnames(test_file)[c(6:20)] <- c('plt9th','phhoo','phsp','mfaminc','mrent_acs','mhv','phh_wocomp','phunomv','phuoo_perroom151p','pfampov','pfam_shwc','pcivunemp','ADI_NATRANK','igini','pohuwoplumbing')
+#test_file[c(6:24)] <- scale(test_file[c(6:24)])
+#modelt <- glmer(therapeutic_inertia ~ plt9th+phsp+phhoo+mfaminc+mrent_acs+mhv+pNoPhone+phunomv+phuoo_perroom151p+pfampov+pfam_shwc+pcivunemp+ADI_NATRANK+igini+pohuwoplumbing+mmMortgage+`p.1.5PovThresh`+pEmpWC+(1 | mrn),
+#                data=test_file,
+#                family=binomial,
+#                glmerControl(optimizer='bobyqa'))
+#summary(modelt)
+
+
+
+
+
+  #/* Attempts to reproduce some of Grant's SAS code in R /*
+
+#data$agegrp <- factor(data$agegrp)
+#data$total_comorbidities <- factor(data$total_comorbidities)
+
+#gmodel <- glmer(therapeutic_inertia ~ agegrp + total_comorbidities + agegrp:total_comorbidities + (1|mrn),
+#                data = data,
+#                family = binomial)
+#summary(gmodel)
+
+
+#library('readxl')
+#analysis <- read_excel('therapeutic_inertia_analysis_050723.xlsx')
+#htn <- subset(analysis, htn == 1)
+#htn$agegrp <- factor(htn$agegrp)
+#htn$gender <- factor(htn$gender)
+#htn$race_eth1 <- factor(htn$race_eth1)
+#htn$site <- factor(htn$site)
+#htn$total_comorbidities_cat <- factor(htn$total_comorbidities_cat)
+#htn$htn_severity <- factor(htn$htn_severity)
+#library(lme4)
+#modelg <- glmer(therapeutic_inertia ~ agegrp + total_comorbidities + agegrp:total_comorbidities + gender + race_eth1 + bmi_analysis + site + total_visits + timefactor_m + total_med_classes + htn_severity + (1 | mrn),
+#                data = htn,
+#                family = binomial)
+#summary(modelg)
+

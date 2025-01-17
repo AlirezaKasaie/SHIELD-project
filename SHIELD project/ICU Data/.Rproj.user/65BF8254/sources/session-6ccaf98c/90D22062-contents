@@ -1,0 +1,36 @@
+# Load necessary libraries
+if (!require("dplyr")) install.packages("dplyr", dependencies = TRUE)
+library(dplyr)
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Generate the dataset
+dataset <- data.frame(
+  # Independent Variables
+  var1 = runif(400, 0, 100),                      # Numeric: Uniform distribution
+  var2 = sample(1:200, 400, replace = TRUE),      # Integer: Random integers
+  var3 = rnorm(400, mean = 50, sd = 10),           # Numeric: Normally distributed
+  var4 = sample(LETTERS, 400, replace = TRUE),    # Character: Random letters
+  var5 = sample(c("Male", "Female"), 400, replace = TRUE), # Character: Factor-like
+  var6 = rbinom(400, 1, 0.5),                     # Binary: 0 or 1
+  var7 = rpois(400, lambda = 3),                  # Integer: Poisson distribution
+  var8 = runif(400, 10, 50),                      # Numeric: Uniform distribution
+  var9 = sample(c("Yes", "No"), 400, replace = TRUE), # Character: Factor-like
+  var10 = rlogis(400, location = 0, scale = 1),   # Numeric: Logistic distribution
+  var11 = sample(c("Group1", "Group2", "Group3"), 400, replace = TRUE), # Character: Factor-like
+  var12 = rchisq(400, df = 2),                    # Numeric: Chi-squared distribution
+  var13 = rexp(400, rate = 1),                    # Numeric: Exponential distribution
+  var14 = sample(c("Type1", "Type2", "Type3"), 400, replace = TRUE), # Character: Categories
+  var15 = rnorm(400, mean = 0, sd = 1),           # Numeric: Normally distributed
+  var16 = sample(100:300, 400, replace = TRUE),   # Integer: Random integers
+  var17 = runif(400, 25, 75),                     # Numeric: Uniform distribution
+  var18 = sample(c("Option1", "Option2", "Option3", "Option4"), 400, replace = TRUE), # Character: Options
+  var19 = abs(rnorm(400, mean = 20, sd = 5)),     # Numeric: Absolute normal values
+  
+  # Dependent Variable
+  dependent_var = sample(0:1, 400, replace = TRUE) # Binary: 0 or 1 (Can be for classification)
+)
+
+# Print the first few rows of the dataset to check
+head(dataset)

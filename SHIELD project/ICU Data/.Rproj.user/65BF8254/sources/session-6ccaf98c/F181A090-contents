@@ -1,0 +1,32 @@
+library(dplyr)
+library(lubridate)
+
+Data = read.csv(file.choose(), sep=",", header=T)
+
+# Assuming your dataset is named 'data'
+# Convert the Week End column to a Date type
+Data$Week.End = mdy(Data$Week.End)
+
+# Create a Year-Month column for grouping
+Data$Date = format(Data$Week.End, "%Y-%m")
+
+# Summarize the data to get total Deaths per month for each Zipcode
+Data_summary = Data %>%
+  group_by(ZIP.Code, Date) %>%
+  summarise(Total_Deaths = sum(Deaths...Weekly, na.rm = TRUE))
+
+write.csv(Data_summary, file = "C:/Users/skasaiesharifi/Documents/Data_summary.csv", row.names = FALSE)
+
+
+# To merge this summary back to the original dataset
+# we need to create a unique key to join on (Zipcode and Year_Month)
+data$Year_Month <- format(data$Week_End, "%Y-%m")
+
+# Join the summarized data back to the original dataframe to add the Total_Deaths column
+final_data <- left_join(data, data_summary, by = c("Zipcode", "Year_Month"))
+
+# If you just want the new column without repeating the original Deaths - Weekly for each row,
+# then you can drop the unnecessary columns after joining
+final_data <- final_data %>%
+  select(-Deaths_Weekly, -Year_Month.x, -Week_End) %>%
+  rename(Deaths = Total_Deaths)

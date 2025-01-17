@@ -1,0 +1,208 @@
+---
+title: "Plate_96"
+output: html_document
+date: "2024-01-21"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+
+library('dplyr')
+library('ggplot2')
+library('tidyverse')
+
+```
+
+```{r}
+
+setwd("C:/Users/fatir/Desktop/SHIELD/Data")
+
+p96=read.csv(file.choose(), sep=",", header=T)
+p96scan=read.csv(file.choose(), sep=",", header=T)
+
+```
+
+```{r}
+
+str(p96scan)
+str(p96)
+
+# changing column names
+
+colnames(p96scan) <- c("Equipment_ID", "Plate_ID", "Plate_Scan_ID", "Tech_ID", "Timestamp_Scan")
+colnames(p96) <- c("BufferMix_ID", "Equipment_ID", "Lab_ID", "Plate_Barcode", "Plate_ID", "Tech_ID", "Timestamp")
+
+p96$BufferMix_ID <- as.factor(p96$BufferMix_ID)
+p96$Equipment_ID <- as.factor(p96$Equipment_ID)
+p96$Lab_ID <- as.factor(p96$Lab_ID)
+p96$Plate_ID <- as.factor(p96$Plate_ID)
+p96$Tech_ID <- as.factor(p96$Tech_ID)
+
+p96$Timestamp <- as.POSIXct(p96$Timestamp, format = "%m/%d/%Y %I:%M:%S %p")
+
+p96scan$Equipment_ID <- as.factor(p96scan$Equipment_ID)
+p96scan$Plate_ID <- as.factor(p96scan$Plate_ID)
+p96scan$Plate_Scan_ID <- as.factor(p96scan$Plate_Scan_ID)
+p96scan$Tech_ID <- as.factor(p96scan$Tech_ID)
+
+p96scan$Timestamp_Scan <- as.POSIXct(p96scan$Timestamp_Scan, format = "%m/%d/%Y %I:%M:%S %p")
+
+```
+
+```{r}
+
+# Checking for missing values
+
+colMeans(is.na(p96))*100
+colMeans(is.na(p96scan))*100
+
+  # 38.45% of data (Equipment_ID) missing from Plate_96_Scan
+
+# Finding out time span
+
+## Plate_96
+
+min_TS_p96 <- min(p96$Timestamp)
+max_TS_p96 <- max(p96$Timestamp)
+
+print(paste("Minimum Timestamp:", min_TS_p96))
+print(paste("Maximum Timestamp:", max_TS_p96))
+
+## Plate_96_Scan
+
+min_TS_p96scan <- min(p96scan$Timestamp_Scan)
+max_TS_p96scan <- max(p96scan$Timestamp_Scan)
+
+print(paste("Minimum Timestamp:", min_TS_p96scan))
+print(paste("Maximum Timestamp:", max_TS_p96scan))
+
+
+# How many labs are there?
+
+levels(p96$Lab_ID)
+  # appears to be 13, Lab ID 11 missing here as well
+
+
+# No. of equipment, plates, techs
+
+p96 %>% summarise(Num_Equip = n_distinct(Equipment_ID), Num_Plates = n_distinct(Plate_ID), Num_Techs = n_distinct(Tech_ID), Num_BufferMix = n_distinct(BufferMix_ID))
+
+  ##grouped by LabID
+
+per_lab <- p96 %>% group_by(Lab_ID) %>% summarise(Num_Equip = n_distinct(Equipment_ID), Num_Plates = n_distinct(Plate_ID), Num_Techs = n_distinct(Tech_ID), Num_BufferMix = n_distinct(BufferMix_ID))
+
+per_lab
+
+  # plates per lab
+ggplot(per_lab, aes(x = Lab_ID, y = Num_Plates, fill = Lab_ID)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Plates processed per Lab", x = "Lab ID", y = "Number of Plates Processed")
+
+  # techs per lab
+ggplot(per_lab, aes(x = Lab_ID, y = Num_Techs, fill = Lab_ID)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Number of Techs per Lab", x = "Lab ID", y = "Number of Techs")
+
+# Plates processed by Techs
+
+plates_per_tech <- p96 %>% group_by(Tech_ID) %>% summarise(Num_Plates_Processed = n_distinct(Plate_ID)) %>% arrange(desc(Num_Plates_Processed))
+
+plates_per_tech
+
+  ## showing the techs that processed the highest number of plates
+
+```
+
+```{r, Join}
+
+## Joining both the datasets
+
+plate_join <- full_join(p96, p96scan, by = "Plate_ID")
+
+# Checking for missing values
+
+colMeans(is.na(plate_join))*100
+
+  # missing values from Plate_Scan dataset
+
+nlevels(p96$Plate_ID)
+nlevels(p96scan$Plate_ID)
+
+## Plates that were not scanned or data missing from Plate_Scan
+
+na_scanid <- plate_join[is.na(plate_join$Plate_Scan_ID), ]
+
+notscanned <- data.frame(Plate_ID = na_scanid$Plate_ID, Lab_ID = na_scanid$Lab_ID)
+
+table(notscanned$Lab_ID)
+  # all labs have plates that are not present in the Plate_Scan dataset
+
+## Different equipment IDs for the same plates
+
+diff_equip <- plate_join[levels(plate_join$Equipment_ID.x) != levels(plate_join$Equipment_ID.y), c("Equipment_ID.x", "Equipment_ID.y", "Plate_ID")]
+
+# plate_join$Equipment_ID.y <- ifelse(is.na(plate_join$Equipment_ID.y), plate_join$Equipment_ID.x, plate_join$Equipment_ID.y)
+  ## to replace NA values with the equipment ID from p96
+
+## Different Tech IDs for the same plates
+
+diff_tech <- plate_join[levels(plate_join$Tech_ID.x) != levels(plate_join$Tech_ID.y), c("Tech_ID.x", "Tech_ID.y", "Plate_ID")]
+
+# plate_join$Tech_ID.y <- ifelse(is.na(plate_join$Tech_ID.y), plate_join$Tech_ID.x, plate_join$Tech_ID.y)
+  ## to replace NA values with the Tech ID from p96
+```
+
+
+```{r}
+
+library(lubridate)
+
+# Removing time from timestamp
+
+p96$Date<- as.Date(p96$Timestamp)
+
+plates_daily <- p96 %>% group_by(Date) %>% count() %>% arrange(desc(n))
+
+top10_dates <- head(plates_daily, 10)
+
+top10_dates
+
+ggplot(plates_daily, aes(x = Date, y = n, fill = Date)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Daily Plates Processed", x = "Date", y = "Number of Plates Processed")
+
+ggplot(top10_dates, aes(x = Date, y = n, fill = Date)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Most plates processed", x = "Date", y = "Number of Plates Processed")
+
+  # shows the dates with highest number of plates processed; 2022-01-20
+
+plates_weekly <- p96 %>% mutate(Week = floor_date(Date, unit = "week")) %>% group_by(Week) %>% count() %>% arrange(desc(n))
+
+top10_weeks <- head(plates_weekly, 10)
+
+top10_weeks
+
+ggplot(plates_weekly, aes(x = Week, y = n, fill = Week)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Weekly Plates Processed", x = "Week", y = "Number of Plates Processed")
+
+ggplot(top10_weeks, aes(x = Week, y = n, fill = Week)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Most plates processed", x = "Week", y = "Number of Plates Processed")
+
+  # shows the weeks with highest number of plates processed; week of 2022-01-09
+
+```
+

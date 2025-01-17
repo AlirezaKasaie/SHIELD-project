@@ -1,0 +1,14 @@
+data = read.csv(file.choose(), sep=",", header=T)
+
+zip_date_vaccine = select(data, zipcode, Date, total_vaccination)
+
+zip_date_vaccine$Date <- sub("-(\\d\\d)$", " 20\\1", zip_date_vaccine$Date)
+
+# Optionally, write the new dataset to a CSV file
+write.csv(zip_and_date_vaccine, file = "C:/Users/skasaiesharifi/Documents/zip_and_date_vaccine.csv", row.names = FALSE)
+
+common_columns = c("zipcode","Date")
+
+ICU_UPDATED_3 = left_join(ICU_UPDATED_2, zip_date_vaccine, by = common_columns)
+
+rm(zip_and_date_vaccine)
