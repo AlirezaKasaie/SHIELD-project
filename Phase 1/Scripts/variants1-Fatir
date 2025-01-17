@@ -1,0 +1,167 @@
+---
+title: "data_req"
+output: html_document
+date: "2024-05-31"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+
+library('dplyr')
+library('ggplot2')
+library('tidyverse')
+library(lubridate)
+
+library(here)
+library('data.table')
+
+covid_specimen <- fread(here("T_COVID_SPCMN.csv"))
+
+```
+
+
+```{r}
+
+column_names <- data.frame(ColumnNames = colnames(covid_specimen))
+
+covid_specimen$'DATE - COLLECTED' <- as.POSIXct(covid_specimen$'DATE - COLLECTED', format = "%m/%d/%Y %I:%M:%S %p")
+
+
+covid_specimen$SpecimenBarcode <- as.factor(covid_specimen$'SPECIMEN BARCODE')
+covid_specimen$location <- as.factor(covid_specimen$'LOCATION')
+covid_specimen$Result <- as.factor(covid_specimen$'RESULT (P/Other)')
+covid_specimen$Date <- as.Date(covid_specimen$'DATE - COLLECTED')
+
+
+```
+
+```{r}
+
+sample <- covid_specimen[, c("[NAI]PATIENT ZIP", "location", "SpecimenBarcode", "Result", "Date")]
+sample <- sample %>% rename(zip = '[NAI]PATIENT ZIP')
+
+sample[sample == ""] <- NA
+missing_values <- is.na(sample)
+missing_count <- colSums(missing_values)
+missing_count
+
+sample <- sample[complete.cases(sample), ]
+
+filtered_sample <- sample %>% filter(grepl("^[0-9]+$", zip))
+filtered_sample <- filtered_sample %>% filter(zip >= 60002 & zip <= 62959)
+filtered_sample <- filtered_sample %>% mutate(zip = substr(zip, 1, 5))
+
+filtered_sample$zip <- as.factor(filtered_sample$zip)
+
+```
+
+```{r}
+
+# Alpha Wave
+
+alpha <- filtered_sample %>% filter(as.Date(Date, format = "%m/%d/%Y") >= as.Date("2021-03-01") &
+           as.Date(Date, format = "%m/%d/%Y") <= as.Date("2021-06-30"))
+
+# monthly
+
+b <- alpha %>% mutate(Month = format(Date, "%Y-%m"))
+b$Date <- NULL
+
+monthly_alpha <- b %>% group_by(zip, Month) %>%
+  summarise(SamplesCollected = n_distinct(SpecimenBarcode),
+    PositiveCases = sum(Result == "Positive"), TestCenters = n_distinct(location))
+
+# weekly
+
+c <- alpha %>% mutate(Week = paste(year(Date), week(Date), sep = "-"))
+c$Date <- NULL
+
+weekly_alpha <- c %>% group_by(zip, Week) %>%
+  summarise(SamplesCollected = n_distinct(SpecimenBarcode),
+    PositiveCases = sum(Result == "Positive"), TestCenters = n_distinct(location))
+
+```
+
+
+```{r}
+
+# Delta Wave
+
+delta <- filtered_sample %>% filter(as.Date(Date, format = "%m/%d/%Y") >= as.Date("2021-08-01") &
+           as.Date(Date, format = "%m/%d/%Y") <= as.Date("2021-11-30"))
+
+# monthly
+
+d <- delta %>% mutate(Month = format(Date, "%Y-%m"))
+d$Date <- NULL
+
+monthly_delta <- d %>% group_by(zip, Month) %>%
+  summarise(SamplesCollected = n_distinct(SpecimenBarcode),
+    PositiveCases = sum(Result == "Positive"), TestCenters = n_distinct(location))
+
+# weekly
+
+
+e <- delta %>% mutate(Week = paste(year(Date), week(Date), sep = "-"))
+e$Date <- NULL
+
+weekly_delta <- e %>% group_by(zip, Week) %>%
+  summarise(SamplesCollected = n_distinct(SpecimenBarcode),
+    PositiveCases = sum(Result == "Positive"), TestCenters = n_distinct(location))
+
+
+```{r}
+
+# Omicron  Wave
+
+omicron  <- filtered_sample %>% filter(as.Date(Date, format = "%m/%d/%Y") >= as.Date("2021-12-01") &
+           as.Date(Date, format = "%m/%d/%Y") <= as.Date("2022-03-31"))
+
+# monthly
+
+f <- omicron %>% mutate(Month = format(Date, "%Y-%m"))
+f$Date <- NULL
+
+monthly_omicron <- f %>% group_by(zip, Month) %>%
+  summarise(SamplesCollected = n_distinct(SpecimenBarcode),
+    PositiveCases = sum(Result == "Positive"), TestCenters = n_distinct(location))
+
+
+# weekly
+
+
+g <- omicron %>% mutate(Week = paste(year(Date), week(Date), sep = "-"))
+g$Date <- NULL
+
+weekly_omicron <- g %>% group_by(zip, Week) %>%
+  summarise(SamplesCollected = n_distinct(SpecimenBarcode),
+    PositiveCases = sum(Result == "Positive"), TestCenters = n_distinct(location))
+
+```
+
+```{r}
+
+library(openxlsx)
+
+write.xlsx(monthly_alpha, "monthly_alpha.xlsx", rowNames = FALSE)
+write.xlsx(weekly_alpha, "weekly_alpha.xlsx", rowNames = FALSE)
+write.xlsx(monthly_delta, "monthly_delta.xlsx", rowNames = FALSE)
+write.xlsx(weekly_delta, "weekly_delta.xlsx", rowNames = FALSE)
+write.xlsx(monthly_omicron, "monthly_omicron.xlsx", rowNames = FALSE)
+write.xlsx(weekly_omicron, "weekly_omicron.xlsx", rowNames = FALSE)
+
+
+
+```
+

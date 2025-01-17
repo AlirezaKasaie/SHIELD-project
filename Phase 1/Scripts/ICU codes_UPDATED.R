@@ -1,0 +1,143 @@
+Dataset_Dynamic = read.csv(file.choose(), sep=",", header=T)
+
+IL_zipcodes = unique(Dataset_Dynamic$zipcode)
+
+
+IL_zipcodes = as.data.frame(IL_zipcodes)
+
+library(ggmap)
+
+register_google(key = "AIzaSyAkwdJeM7LFVthD5em9YkYchOADPuupai0")
+
+illinois_map = get_map(location = 'Illinois', zoom = 6, maptype = "roadmap")
+ggmap(illinois_map)
+
+install.packages("tigris")
+library(tigris)
+
+interest_zipcodes = read.csv(file.choose(), sep=",", header=T)
+
+zip_code_boundary = zctas(cb = FALSE, state = "IL", year = 2010) %>% 
+  filter(ZCTA5CE10 %in% interest_zipcodes$zipcode )
+
+zip_code_boundary_wgs84 = st_transform(zip_code_boundary, crs = 4326)
+
+install.packages("sf")
+install.packages("leaflet")
+library(sf)
+library(leaflet)
+
+leaflet() %>% 
+  addProviderTiles(providers$OpenStreetMap) %>% 
+  setView(lng = -87.841695, lat = 41.879198, zoom = 10) %>%
+  addPolygons(data = zip_code_boundary_wgs84, fillColor = "red", fillOpacity = 0.2, color = "black", weight = 2, smoothFactor = 0.5)
+
+#*************************************************************************************************
+
+#ICU_UPDATED = read.csv(file.choose(), sep=",", header=T)
+
+#ICU_UPDATED$first_icu_dt = mdy(ICU_UPDATED$first_icu_dt)
+
+ICU_UPDATED_2 = combined_dataset %>%
+ # mutate(month_year = format(first_icu_dt, "%b %Y")) %>%
+  group_by(zipcode, Date) %>%
+  summarise(
+    total_hospitalization = n_distinct(hsp_account_id),
+    #Number_of_SHIELD_centers = sum(`Number.of.SHIELD.centers`, na.rm = TRUE),
+    #Number_of_Other_centers = sum(`Number.of.Other.Centers`, na.rm = TRUE),
+    avg_Age = as.integer(mean(`age`, na.rm = TRUE)),
+    avg_icu_los = as.integer(mean(`icu_los`, na.rm = TRUE)),
+    Gender_Male = sum(`gender`=="M", na.rm = TRUE),
+    Gender_Female = sum(`gender`=="F", na.rm = TRUE),
+    Race_White = sum(`race`=="White", na.rm = TRUE),
+    Race_Black_African_American = sum(`race`=="Black / African American", na.rm = TRUE),
+    Race_Other = sum(`race`=="Other", na.rm = TRUE),
+    Race_Asian = sum(`race`=="Asian", na.rm = TRUE),
+    Race_American_Indian_Alaskan_Native = sum(`race`=="American Indian/Alaskan Native", na.rm = TRUE),
+    Race_Native_Hawaiian = sum(`race`=="Native Hawaiian and other Pacific Islander", na.rm = TRUE),
+    Race_Unknown = sum(`race`=="Unknown", na.rm = TRUE),
+    Ethnic_Hispanic = sum(`ethnic`=="Hispanic", na.rm = TRUE),
+    Ethnic_Non_Hispanic = sum(`ethnic`=="Non-Hispanic or Latino/a", na.rm = TRUE),
+    Insurance_Insured = sum(`financial_class`=="Inssured", na.rm = TRUE),
+    Insurance_Uninsured = sum(`financial_class`=="Uninssured", na.rm = TRUE),
+    .groups = 'drop' # This will automatically ungroup the data after summarisation
+  )
+
+#ICU_UPDATED_2 = rename(ICU_UPDATED_2, Date = month_year)
+
+#Dataset_Dynamic = Dataset_Dynamic %>%
+  #mutate(Date = paste(Month, Year) %>%
+           #str_to_title())
+#ICU_UPDATED_2 = ICU_UPDATED_2 %>%
+  #left_join(Dataset_Dynamic, by = c("zipcode", "Date"), suffix = c("", ".dynamic")) %>%
+  #select(-c(Year, Month, TotalPopulation, total_death, Vaccination.Rate, Death.Rate, 
+             #SHIELDS, Other, DATE, Date_converted, Date_numeric ))
+
+
+write.csv(ICU_UPDATED_2, file = "R:/mtootooni/217107/Shield Data/Alireza/Shield/Data/ICU_UPDATED_2.csv", row.names = FALSE)
+
+
+#*************************************************************************************************
+
+ICU_UPDATED_2 = read.csv(file.choose(), sep=",", header=T)
+
+icu_admission_model = glm(total.ICU.admission.per.zipcode  ~ Number_of_SHIELD_centers+Number_of_Other_centers+avg_Age +avg_icu_los+
+                            Gender_Male+Gender_Female+Race_White+Race_Black_African_American+
+                            Race_Other+Race_Asian+Race_American_Indian_Alaskan_Native+Race_Native_Hawaiian+
+                            Race_Unknown+Ethnic_Hispanic+Ethnic_Non_Hispanic+Insurance_Insured+Insurance_Uninsured,
+                            family = poisson, data = ICU_UPDATED_2)
+
+summary(icu_admission_model)
+
+model_summary = tidy(icu_admission_model)
+
+
+icu_los_model = glm(avg_icu_los ~ Number_of_SHIELD_centers+Number_of_Other_centers+avg_Age+
+                            Gender_Male+Gender_Female+Race_White+Race_Black_African_American+
+                            Race_Other+Race_Asian+Race_American_Indian_Alaskan_Native+Race_Native_Hawaiian+
+                            Race_Unknown+Ethnic_Hispanic+Ethnic_Non_Hispanic+Insurance_Insured+Insurance_Uninsured,
+                            family = poisson, data = ICU_UPDATED_2)
+
+summary(icu_los_model)
+
+model_summary = tidy(icu_los_model)
+
+Correlation_Result = cor(ICU_UPDATED_2$avg_icu_los, ICU_UPDATED_2$Number_of_SHIELD_centers, method = "pearson", use = "complete.obs")
+Correlation_Result
+
+ggplot(ICU_UPDATED_2, aes(x = Number_of_SHIELD_centers , y = avg_icu_los)) +
+  geom_point(alpha = 0.5) +  # Adjust point transparency with alpha
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +  # Add a linear regression line
+  labs(title = "Correlation between Loyola ICU Length of Staty and Number of SHIELD centers",
+       x = "Number of SHIELD centers",
+       y = "ICU Length of Stay") +
+  theme_minimal() 
+
+Correlation_Result = cor(ICU_UPDATED_2$total.ICU.admission.per.zipcode , ICU_UPDATED_2$Number_of_SHIELD_centers, method = "pearson", use = "complete.obs")
+Correlation_Result
+
+icu_admission__rate_model = glm(ICU.admission.rate ~ Number_of_SHIELD_centers+Number_of_Other_centers+avg_Age+
+                      Gender_Male+Gender_Female+Race_White+Race_Black_African_American+
+                      Race_Other+Race_Asian+Race_American_Indian_Alaskan_Native+Race_Native_Hawaiian+
+                      Race_Unknown+Ethnic_Hispanic+Ethnic_Non_Hispanic+Insurance_Insured+Insurance_Uninsured,
+                    family = poisson, data = ICU_UPDATED_2)
+
+summary(icu_admission__rate_model)
+
+model_summary = tidy(icu_admission__rate_model)
+
+
+icu_admission_rate_model_1 = glm(ICU.admission.rate~Number_of_SHIELD_centers, family = poisson, data = ICU_UPDATED_2)
+
+summary(icu_admission_rate_model_1)
+
+ggplot(ICU_UPDATED_2, aes(x = Number_of_SHIELD_centers , y = ICU.admission.rate)) +
+  geom_point(alpha = 0.5) +  # Adjust point transparency with alpha
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +  # Add a linear regression line
+  labs(title = "Correlation between Loyola ICU Admission Rate and Number of SHIELD centers",
+       x = "Number of SHIELD centers",
+       y = "ICU admission rate per 1000 population") +
+  theme_minimal()  # Use a minimal theme for a cleaner look
+
+Correlation_Result = cor(ICU_UPDATED_2$ICU.admission.rate , ICU_UPDATED_2$Number_of_SHIELD_centers, method = "pearson", use = "complete.obs")
+Correlation_Result

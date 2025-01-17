@@ -1,0 +1,212 @@
+---
+title: "Sample"
+output: html_document
+date: "2024-01-28"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+
+library('dplyr')
+library('ggplot2')
+library('tidyverse')
+
+```
+
+```{r}
+
+setwd("C:/Users/fatir/Desktop/SHIELD/Data")
+
+sample=read.csv(file.choose(), sep=",", header=T)
+sample_plate=read.csv(file.choose(), sep=",", header=T)
+
+```
+
+```{r}
+
+str(sample)
+str(sample_plate)
+
+# changing column names
+
+colnames(sample) <- c("Lab_ID", "Sample_Barcode", "Sample_ID", "Tech_ID", "Timestamp", "Specimen_Count")
+colnames(sample_plate) <- c("Plate_Scan_ID", "Sample_ID", "Plate_ID", "Plate_Well")
+
+sample$Lab_ID <- as.factor(sample$Lab_ID)
+sample$Tech_ID <- as.factor(sample$Tech_ID)
+sample$Sample_ID <- as.factor(sample$Sample_ID)
+sample$Timestamp <- as.POSIXct(sample$Timestamp, format = "%m/%d/%Y %I:%M:%S %p")
+
+sample_plate$Plate_Scan_ID <- as.factor(sample_plate$Plate_Scan_ID)
+
+```
+
+```{r}
+
+# Checking for missing values
+
+colMeans(is.na(sample))*100
+colMeans(is.na(sample_plate))*100
+  # no missing data
+
+# Finding out time span
+
+min_TS_sample <- min(sample$Timestamp)
+max_TS_sample <- max(sample$Timestamp)
+
+print(paste("Minimum Timestamp:", min_TS_sample))
+print(paste("Maximum Timestamp:", max_TS_sample))
+
+# Checking for uniqueness
+
+are_values_unique <- !any(duplicated(sample$Timestamp))
+if (are_values_unique) {print("All values in the Timestamp column are unique.")} else {print("There are duplicated values in the Timestamp column.")}
+  # There are duplicated values in the Timestamp column.
+
+are_values_unique1 <- !any(duplicated(sample$Sample_ID))
+if (are_values_unique1) {print("All values in the Sample_ID column are unique.")} else {print("There are duplicated values in the Sample_ID column.")}
+  # All values in the Sample_ID column are unique in 'sample'.
+
+are_values_unique2 <- !any(duplicated(sample_plate$Sample_ID))
+if (are_values_unique2) {print("All values in the Sample_ID column are unique.")} else {print("There are duplicated values in the Sample_ID column.")}
+  # There are duplicated values in the Sample_ID column in 'sample_plate'.
+
+are_values_unique3 <- !any(duplicated(sample_plate$Plate_ID))
+if (are_values_unique3) {print("All values in the Plate_ID column are unique.")} else {print("There are duplicated values in the Plate_ID column.")}
+  # All values in the Plate_ID column are unique.
+
+
+# How many labs are there?
+
+levels(sample$Lab_ID)
+  # appears to be 13, Lab ID 11 missing here as well
+
+per_lab_sample <- sample %>% group_by(Lab_ID) %>% summarise(Num_Techs = n_distinct(Tech_ID), Num_Samples = n_distinct(Sample_ID))
+
+per_lab_sample
+
+  # samples per lab
+ggplot(per_lab_sample, aes(x = Lab_ID, y = Num_Samples, fill = Lab_ID)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Samples processed per Lab", x = "Lab ID", y = "Number of Samples Processed")
+
+  # techs per lab
+ggplot(per_lab_sample, aes(x = Lab_ID, y = Num_Techs, fill = Lab_ID)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Number of Techs per Lab", x = "Lab ID", y = "Number of Techs")
+
+
+```
+
+```{r}
+
+library(lubridate)
+
+# Removing time from timestamp
+
+sample$Date <- as.Date(sample$Timestamp)
+
+## Daily
+
+samples_daily <- sample %>% group_by(Date) %>% count() %>% arrange(desc(n))
+
+top10_dates <- head(samples_daily, 10)
+
+top10_dates
+
+ggplot(samples_daily, aes(x = Date, y = n, fill = Date)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Daily Samples Processed", x = "Date", y = "Number of Samples Processed")
+
+ggplot(top10_dates, aes(x = Date, y = n, fill = Date)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Most samples processed", x = "Date", y = "Number of Samples Processed")
+
+# per Lab
+
+samples_daily_lab <- sample %>% group_by(Date, Lab_ID) %>% count() %>% arrange(desc(n))
+
+top10_samples_daily_lab <- head(samples_daily_lab, 10)
+
+top10_samples_daily_lab
+
+## Weekly
+
+samples_weekly <- sample %>% mutate(Week = floor_date(Date, unit = "week")) %>% group_by(Week) %>% count() %>% arrange(desc(n))
+
+top10_weeks <- head(samples_weekly, 10)
+
+top10_weeks
+
+ggplot(samples_weekly, aes(x = Week, y = n, fill = Week)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Weekly Samples Processed", x = "Week", y = "Number of Samples Processed")
+
+ggplot(top10_weeks, aes(x = Week, y = n, fill = Week)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Most samples processed", x = "Week", y = "Number of Samples Processed")
+
+# per Lab
+
+samples_weekly_lab <- sample %>% mutate(Week = floor_date(Date, unit = "week")) %>% group_by(Week, Lab_ID) %>% count() %>% arrange(desc(n))
+
+top10_samples_weekly_lab <- head(samples_weekly_lab, 10)
+
+top10_samples_weekly_lab
+
+## Samples by month
+
+sample_monthly <- sample %>% mutate(Month = format(Date, "%Y-%m")) %>% group_by(Month) %>%
+                          summarise(NumSamples = n()) %>% arrange(desc(NumSamples))
+
+top10_months <- head(sample_monthly, 10)
+
+top10_months
+
+ggplot(sample_monthly, aes(x = Month, y = NumSamples)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Monthly Samples Processed", x = "Month", y = "Number of Samples Processed")
+
+ggplot(sample_monthly, aes(x = Month, y = NumSamples, group = 1)) +
+  geom_line() +
+  labs(title = "Monthly Samples Processed", x = "Month", y = "Number of Samples Processed")
+
+ggplot(sample_monthly, aes(x = Month, y = NumSamples, group = 1)) +
+  geom_bar(stat = "identity", fill = "steelblue", alpha = 0.7) +
+  geom_line(color = "red", linewidth = 1) +
+  labs(title = "Monthly Samples Processed", x = "Month", y = "Number of Samples Processed")
+
+# per lab
+
+sample_monthly_lab <- sample %>% mutate(MonthYear = format(Date, "%Y-%m")) %>% group_by(Lab_ID, MonthYear) %>%
+                          summarise(NumSamples = n()) %>% arrange(desc(NumSamples))
+
+sample_monthly_lab
+
+```
+
+```{r}
+
+  ## Average number of samples per lab
+
+avg_sample_perlab <- sample %>% mutate(MonthYear = format(Date, "%Y-%m")) %>% group_by(Lab_ID, MonthYear) %>% summarise(NumSamples = n()) %>% group_by(Lab_ID) %>%
+              summarise(AvgNumSamples = mean(NumSamples)) %>% arrange(desc(AvgNumSamples))
+
+ggplot(avg_sample_perlab, aes(x = Lab_ID, y = AvgNumSamples, fill = Lab_ID)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Mean Samples per Lab", x = "Lab ID", y = "Mean Samples")
+
+```
+
+

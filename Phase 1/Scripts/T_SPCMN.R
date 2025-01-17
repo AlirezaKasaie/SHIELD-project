@@ -1,0 +1,224 @@
+library(ggplot2)
+library(data.table)
+library(dplyr)
+library(lubridate)
+library(tidyr)
+
+ICU_UPDATED_2=fread(file.choose(), sep=",", header=T)
+
+ICU_UPDATED_2 <- ICU_UPDATED_2 %>%
+  mutate(Date = mdy(Date)) %>%  
+  mutate(Date = format(Date, "%Y-%m"))
+
+TCOVID=fread(file.choose(), sep=",", header=T)
+#ICU_UPDATED_FINAL = fread(file.choose(), sep=",", header=T)
+colnames(TCOVID)
+
+TCOVID_NEW <- TCOVID %>%
+  dplyr::select(`[NAI]PATIENT ZIP`, `DATE - COLLECTED`, `[NAI]RESULT [EMR]`, `[NAI]SPECIMEN BARCODE [EMR]`, `LOCATION`)
+
+
+TCOVID_NEW = TCOVID_NEW %>%
+  rename(zipcode = `[NAI]PATIENT ZIP`)
+
+
+TCOVID_NEW$`DATE - COLLECTED` = as.POSIXct(TCOVID_NEW$`DATE - COLLECTED`, format = "%m/%d/%Y %I:%M:%S %p")
+TCOVID_NEW$`DATE - COLLECTED` = format(TCOVID_NEW$`DATE - COLLECTED`, "%Y-%m")
+
+
+TCOVID_NEW = TCOVID_NEW %>%
+  filter(!apply(., 1, function(x) any(grepl("IL", x))))
+
+TCOVID_NEW = TCOVID_NEW %>%
+  mutate(zipcode = substr(zipcode, 1, 5))
+
+# TCOVID_NEW$AgencyID = as.factor(TCOVID_NEW$`SHIELD ID`)
+# TCOVID_NEW$AgencyID = as.numeric(TCOVID_NEW$AgencyID)
+
+
+# TCOVID_NEW_filtered = TCOVID_NEW %>% 
+  #filter(TCOVID_NEW$`[NAI]PATIENT ZIP` %in% count_per_zip_ICU$zipcode)
+
+#TCOVID_NEW_filtered = TCOVID_NEW_filtered[order(TCOVID_NEW_filtered$`DATE - COLLECTED`), ]
+
+TCOVID_NEW = TCOVID_NEW %>%
+  filter(!grepl("^2023-", `DATE - COLLECTED`))
+
+
+Alpha=fread(file.choose(), sep=",", header=T)
+
+unique_zips <- Alpha %>% 
+  select(zipcode) %>% 
+  distinct() %>% 
+  pull()
+
+
+#ICU_UPDATED_2=fread(file.choose(), sep=",", header=T)
+
+TCOVID_NEW = TCOVID_NEW %>%
+  filter(zipcode %in% unique_zips)
+
+TCOVID_NEW = TCOVID_NEW %>%
+  group_by(zipcode, `DATE - COLLECTED`) %>%
+  mutate(testcenters = n_distinct(`LOCATION`))
+
+TCOVID_NEW <- TCOVID_NEW %>%
+  group_by(zipcode, `DATE - COLLECTED`) %>%
+  mutate(SamplesCollected = n_distinct(`[NAI]SPECIMEN BARCODE [EMR]`))
+
+TCOVID_NEW <- TCOVID_NEW %>%
+  mutate(`DATE - COLLECTED` = as.Date(paste0(`DATE - COLLECTED`, "-01")))
+
+TCOVID_NEW_filtered <- TCOVID_NEW %>%
+  filter(`DATE - COLLECTED` >= as.Date("2021-03-01") & `DATE - COLLECTED` <= as.Date("2021-07-31"))
+
+TCOVID_NEW_filtered <- TCOVID_NEW_filtered %>%
+  mutate(`DATE - COLLECTED` = format(`DATE - COLLECTED`, "%Y-%m"))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+total_unique_zipcodes = n_distinct(TCOVID_NEW$zipcode)
+# total_unique_zipcodes_1 = n_distinct(ICU_UPDATED_FINAL$zipcode)
+
+TCOVID_NEW$`DATE - COLLECTED` = as.Date(paste0(TCOVID_NEW$`DATE - COLLECTED`, "-01"), format = "%Y-%m-%d")
+
+TCOVID_NEW$`DATE - COLLECTED` = format(TCOVID_NEW$`DATE - COLLECTED`, "%Y-%m")
+
+#write.csv(ICU_UPDATED_FINAL, file = "C:/Users/skasaiesharifi/Documents/ICU_UPDATED_FINAL.csv", row.names = FALSE)
+
+
+TCOVID_NEW_aggregated = TCOVID_NEW %>%
+  group_by(zipcode, `DATE - COLLECTED`) %>%
+  summarize(`Total_SHIELD_centers_per_zipcode_per_month` = first(`Total_SHIELD_centers_per_zipcode_per_month`), .groups = 'drop')
+
+combined_dataset$zipcode = as.character(combined_dataset$zipcode)
+
+TCOVID_NEW_aggregated$zipcode = as.character(TCOVID_NEW_aggregated$zipcode)
+
+#rm(TCOVID_NEW_aggregated)
+
+combined_dataset = merge(combined_dataset, TCOVID_NEW_aggregated, by.x = c("zipcode", "Date"), by.y = c("zipcode", "DATE - COLLECTED"), all.x = TRUE)
+
+combined_dataset = combined_dataset %>%
+  rename(Death = Death_Date)
+
+combined_dataset = combined_dataset%>%
+  mutate(`Total_SHIELD_centers_per_zipcode_per_month` = replace_na(`Total_SHIELD_centers_per_zipcode_per_month`, 0))
+
+ADI = fread(file.choose(), sep=",", header=T)
+
+ADI = ADI[,-c(3:9)]
+
+ADI = ADI %>%
+  rename(zipcode = ZIP)
+
+
+ADI$zipcode <- as.character(ADI$zipcode)
+
+ICU_UPDATED_2 <- merge(ICU_UPDATED_2, ADI, by.x = "zipcode", by.y = "zipcode", all.x = TRUE)
+
+ICU_UPDATED_2 = ICU_UPDATED_2[,-c(12:20)]
+
+ICU_UPDATED_2 = ICU_UPDATED_2 %>%
+  rename(ADI = ADI_STATERNK.y)
+
+write.csv(ICU_UPDATED_2, file = "R:/mtootooni/217107/Shield Data/Alireza/Shield/Data/ICU/ICU_UPDATED_2.csv", row.names = FALSE)
+
+
+
+
+
+
+
+
+
+
+
+
+#ICU_UPDATED_FINAL$Date = as.Date(paste0("01-", ICU_UPDATED_FINAL$Date), format = "%d-%b-%y")
+
+ICU_UPDATED_FINAL$Date = factor(ICU_UPDATED_FINAL$Date, levels = sort(unique(ICU_UPDATED_FINAL$Date)))
+
+#data_to_plot = ICU_UPDATED_FINAL %>%
+  #group_by(Date) %>%
+  #summarize(Total_SHIELD_Centers = n(), .groups = 'drop')
+
+#ggplot(data_to_plot, aes(x = Date, y = `Total_SHIELD_Centers`, fill = Date)) +
+  #geom_bar(stat = "identity", position = position_dodge()) +
+  #labs(title = "Number of SHIELD centers Over time",
+      # x = "Date",
+       #y = "Number of SHIELD Centers") +
+ # theme_minimal() +
+  #theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+#data_to_plot_1 = ICU_UPDATED_FINAL %>%
+  #group_by(Date) %>%
+  #summarize(Total_ICU_admission_per_zipcode_per_month = n(), .groups = 'drop')
+
+#ggplot(data_to_plot_1, aes(x = Date, y = `Total_ICU_admission_per_zipcode_per_month`, fill = Date)) +
+ # geom_bar(stat = "identity", position = position_dodge()) +
+  #labs(title = "ICU Admission Over Time",
+       #x = "Date",
+       #y = "Number of ICU Admissions") +
+  #theme_minimal() +
+ # theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+Dataset2 = fread(file.choose(), sep=",", header=T)
+
+ICU_UPDATED_2 <- merge(ICU_UPDATED_2, Dataset2, by.x = "zipcode", by.y = "zipcode", all.x = TRUE)
+
+ICU_UPDATED_2 = ICU_UPDATED_2 %>%
+  rename(ADI = ADI_STATERNK)
+
+ICU_UPDATED_FINAL = ICU_UPDATED_FINAL[,-c(20:39)]
+
+
+#ICU_UPDATED_FINAL = select(ICU_UPDATED_FINAL,-c("Total_SHIELD_centers_per_zipcode_per_month"))
+
+#write.csv(TCOVID_NEW_filtered, file = "C:/Users/skasaiesharifi/Documents/TCOVID_NEW_filtered.csv", row.names = FALSE)
+
+
+Unique_zipcodes = unique(ICU_UPDATED_FINAL$zipcode)%>% as.data.frame(Unique_zipcodes)
+
+write.csv(ICU_UPDATED_2, file = "R:/mtootooni/217107/Shield Data/Alireza/Shield/Data/ICU/ICU_UPDATED_2.csv", row.names = FALSE)
+
+
+
+
+
+
+Account=fread(file.choose(), sep=",", header=T)
+
+
+Account_NEW =  Account %>%
+  filter(`Account Type` == 'Collection Agency' | `Account Type` == 'Collection Location')
+
+Account_NEW = select(Account_NEW, c('Account Type', 'Zip', 'SHIELD Id'))
+
+num_unique_SHIELD_ID_TCOVID_NEW = length(unique(TCOVID_NEW$`SHIELD ID`))
+num_unique_SHIELD_ID_Account = length(unique(Account_NEW$`SHIELD Id`))
+
+Account_NEW = Account_NEW %>% 
+  filter(Account_NEW$`SHIELD Id` %in% TCOVID_NEW$`SHIELD ID`)
+
+Account_NEW <- Account_NEW %>%
+  rename(`SHIELD ID` = `SHIELD Id`)
+
+TCOVID_NEW = TCOVID_NEW %>% 
+  filter(TCOVID_NEW$`SHIELD ID` %in% Account_NEW$`SHIELD Id`)
+
+TCOVID_NEW = TCOVID_NEW[order(TCOVID_NEW$`DATE - COLLECTED`), ]
+
+merged = merge(TCOVID_NEW, Account_NEW[, c('SHIELD ID', 'Zip')], by = 'SHIELD ID', all.x = TRUE)
